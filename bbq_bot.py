@@ -132,7 +132,7 @@ def calendar_markup(year: int, month: int):
         # Показываем индикаторы для всех дат
         bookings = get_bookings(date_str)
         taken = len(bookings)
-        emoji = "◼" if taken == len(SLOTS) else "◻" if taken > 0 else ""
+        emoji = "◼" if taken == len(SLOTS) else "◻" if taken > 0 else "⬜"
         
         # Если дата недоступна (прошлая), делаем кнопку неактивной
         if not is_available:
@@ -164,7 +164,7 @@ async def start_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "🔥 Бот для бронирования BBQ\n\n"
         "• Нажмите «📅 Календарь» чтобы выбрать дату\n"
         "• Нажмите «📋 Мои брони» чтобы посмотреть свои записи\n"
-        "• Нажмите «❌ Отменить мою бронь» чтобы отменить запись"
+        "• Нажмите «❌ Отменить бронь» чтобы отменить запись"
     )
     await update.message.reply_text(welcome, reply_markup=get_main_keyboard())
 
@@ -232,13 +232,33 @@ async def callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if data.startswith("date_"):
         date_str = data.split("_", 1)[1]
         bookings = get_bookings(date_str)
+        
+        # ПРОВЕРЯЕМ, ЕСЛИ ЭТО СЕГОДНЯШНЯЯ ДАТА
+        today = datetime.date.today()
+        current_date = datetime.date.fromisoformat(date_str)
+        is_today = current_date == today
+        
+        # ТЕКУЩЕЕ ВРЕМЯ
+        now_time = datetime.datetime.now().time()
+        
         keyboard = []
+        
         for slot in SLOTS:
+            # ПРОВЕРКА ДОСТУПНОСТИ СЛОТА ПО ВРЕМЕНИ (ТОЛЬКО ДЛЯ СЕГОДНЯ)
+            slot_available = True
+            if is_today:
+                slot_start = int(slot.split("-")[0])
+                if now_time.hour >= slot_start:
+                    slot_available = False
+            
             if slot in bookings:
                 keyboard.append([InlineKeyboardButton(f"❌ {slot} (занято)", callback_data="ignore")])
-            else:
+            elif slot_available:
                 keyboard.append([InlineKeyboardButton(f"✅ {slot}", callback_data=f"slot_{date_str}_{slot}")])
-        # КНОПКА "НАЗАД"  ПОСЛЕ ВСЕХ СЛОТОВ
+            else:
+                keyboard.append([InlineKeyboardButton(f"⏰ {slot} (прошло)", callback_data="ignore")])
+        
+        # КНОПКА "НАЗАД" ТЕПЕРЬ ДОБАВЛЯЕТСЯ ОДИН РАЗ ПОСЛЕ ВСЕХ СЛОТОВ
         keyboard.append([InlineKeyboardButton("↩️ Назад", callback_data="back")])
         await query.edit_message_text(f"📅 {date_str} – выберите слот:", reply_markup=InlineKeyboardMarkup(keyboard))
         return
@@ -248,7 +268,7 @@ async def callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data['booking'] = {'date': date_str, 'slot': slot}
         
         keyboard = [[InlineKeyboardButton(house, callback_data=f"house_{date_str}_{slot}_{house}")] for house in HOUSES.keys()]
-        await query.edit_message_text(f"📅 {date_str} {slot}\n\n🏠 С какого Вы Выберит дома?", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text(f"📅 {date_str} {slot}\n\n🏠 Выберите дом:", reply_markup=InlineKeyboardMarkup(keyboard))
         return
     
     if data.startswith("house_"):
@@ -256,7 +276,7 @@ async def callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data['booking'].update({'house': house})
         
         keyboard = [[InlineKeyboardButton(f"Подъезд {e}", callback_data=f"entrance_{date_str}_{slot}_{house}_{e}")] for e in HOUSES[house]["подъезды"]]
-        await query.edit_message_text(f"📅 {date_str} {slot}\n🏠 {house}\n\n🚪 Напомните подъезд:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text(f"📅 {date_str} {slot}\n🏠 {house}\n\n🚪 Выберите подъезд:", reply_markup=InlineKeyboardMarkup(keyboard))
         return
     
     if data.startswith("entrance_"):
@@ -274,7 +294,7 @@ async def callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if row:
             keyboard.append(row)
         
-        await query.edit_message_text(f"📅 {date_str} {slot}\n🏠 {house}, подъезд {entrance}\n\n🏢 Выберите свою квартиру:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text(f"📅 {date_str} {slot}\n🏠 {house}, подъезд {entrance}\n\n🏢 Выберите квартиру:", reply_markup=InlineKeyboardMarkup(keyboard))
         return
     
     if data.startswith("flat_"):
@@ -287,7 +307,7 @@ async def callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if query.message.chat.type != "private":
                 await ctx.bot.send_message(
                     chat_id=query.message.chat_id,
-                    text=f"🔥 @{user.username} забронировал BBQ на {date_str} {slot}\n🏠 {house}"
+                    text=f"🔥 @{user.username} забронировал BBQ на {date_str} {slot}\n🏠 {house}, подъезд {entrance}, кв. {flat}"
                 )
         else:
             await query.edit_message_text("❌ Слот уже занят!")
@@ -306,14 +326,30 @@ async def text_msg(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif text == "❌ Отменить бронь":
         await cancel_cmd(update, ctx)
 
+# ИСПРАВЛЕННЫЙ ОБРАБОТЧИК ОТМЕНЫ
 async def del_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    _, date_str, slot = query.data.split("_", 2)
+    
+    # Проверяем формат данных
+    try:
+        _, date_str, slot = query.data.split("_", 2)
+    except ValueError:
+        await query.edit_message_text("❌ Ошибка: некорректные данные для отмены.")
+        return
+    
+    # Отменяем бронь
     cancel_slot(date_str, slot, query.from_user.id)
+    
+    # Обновляем сообщение
     await query.edit_message_text(f"✅ Отменено: {date_str} {slot}")
+    
+    # Уведомляем группу
     if query.message.chat.type != "private":
-        await ctx.bot.send_message(query.message.chat_id, f"📅 Освободился слот: {date_str} {slot}")
+        await ctx.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=f"📅 Освободился слот: {date_str} {slot}"
+        )
 
 # --- Старт ---
 def main():
