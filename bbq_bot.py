@@ -6,7 +6,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 from dotenv import load_dotenv
 from pathlib import Path
 
-# ЗАГРУЗКА .env (ВАЖНО: сначала загружаем, потом используем!)
+# ЗАГРУЗКА .env
 env_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=env_path, override=True)
 
@@ -14,7 +14,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_TG_ID = int(os.getenv("ADMIN_TG_ID", 0))
 
 # Настройки
-DB_NAME = "/tmp/bbq.db"  # Для локальной работы
+DB_NAME = "/tmp/bbq.db"
 SLOTS = ["10-12", "12-14", "14-16", "16-18", "18-20", "20-22"]
 
 # Предустановленные данные о домах
@@ -36,7 +36,7 @@ HOUSES = {
             "2": [f"{i}" for i in range(56, 90)],
             "3": [f"{i}" for i in range(91, 125)],
             "4": [f"{i}" for i in range(126, 166)],
-            "5": [f"{i}" for i in range(1671, 197)],
+            "5": [f"{i}" for i in range(167, 197)],
         }
     }
 }
@@ -124,17 +124,22 @@ def calendar_markup(year: int, month: int):
     for day in range(1, last_day.day + 1):
         date_str = f"{year}-{month:02d}-{day:02d}"
         
-        # БЛОКИРУЕМ ПРОШЕДШИЕ ДАТЫ
+        # Определяем, доступна ли дата для выбора
         today = datetime.date.today()
         current_date = datetime.date(year, month, day)
-        if current_date < today:
-            row.append(InlineKeyboardButton(" ", callback_data="ignore"))
-            continue
+        is_available = current_date >= today
         
+        # Показываем индикаторы для всех дат
         bookings = get_bookings(date_str)
         taken = len(bookings)
-        emoji = "◼" if taken == len(SLOTS) else "◻" if taken > 0 else "⬜"
-        row.append(InlineKeyboardButton(f"{emoji} {day}", callback_data=f"date_{date_str}"))
+        emoji = "◼" if taken == len(SLOTS) else "◻" if taken > 0 else ""
+        
+        # Если дата недоступна (прошлая), делаем кнопку неактивной
+        if not is_available:
+            row.append(InlineKeyboardButton(" ", callback_data="ignore"))
+        else:
+            row.append(InlineKeyboardButton(f"{emoji} {day}", callback_data=f"date_{date_str}"))
+        
         if len(row) == 7:
             keyboard.append(row)
             row = []
@@ -159,7 +164,7 @@ async def start_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "🔥 Бот для бронирования BBQ\n\n"
         "• Нажмите «📅 Календарь» чтобы выбрать дату\n"
         "• Нажмите «📋 Мои брони» чтобы посмотреть свои записи\n"
-        "• Нажмите «❌ Отменить бронь» чтобы отменить запись"
+        "• Нажмите «❌ Отменить мою бронь» чтобы отменить запись"
     )
     await update.message.reply_text(welcome, reply_markup=get_main_keyboard())
 
@@ -233,7 +238,8 @@ async def callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 keyboard.append([InlineKeyboardButton(f"❌ {slot} (занято)", callback_data="ignore")])
             else:
                 keyboard.append([InlineKeyboardButton(f"✅ {slot}", callback_data=f"slot_{date_str}_{slot}")])
-            keyboard.append([InlineKeyboardButton("↩️ Назад", callback_data="back")])
+        # КНОПКА "НАЗАД"  ПОСЛЕ ВСЕХ СЛОТОВ
+        keyboard.append([InlineKeyboardButton("↩️ Назад", callback_data="back")])
         await query.edit_message_text(f"📅 {date_str} – выберите слот:", reply_markup=InlineKeyboardMarkup(keyboard))
         return
     
@@ -242,7 +248,7 @@ async def callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data['booking'] = {'date': date_str, 'slot': slot}
         
         keyboard = [[InlineKeyboardButton(house, callback_data=f"house_{date_str}_{slot}_{house}")] for house in HOUSES.keys()]
-        await query.edit_message_text(f"📅 {date_str} {slot}\n\n🏠 Выберите дом:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text(f"📅 {date_str} {slot}\n\n🏠 С какого Вы Выберит дома?", reply_markup=InlineKeyboardMarkup(keyboard))
         return
     
     if data.startswith("house_"):
@@ -250,7 +256,7 @@ async def callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data['booking'].update({'house': house})
         
         keyboard = [[InlineKeyboardButton(f"Подъезд {e}", callback_data=f"entrance_{date_str}_{slot}_{house}_{e}")] for e in HOUSES[house]["подъезды"]]
-        await query.edit_message_text(f"📅 {date_str} {slot}\n🏠 {house}\n\n🚪 Выберите подъезд:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text(f"📅 {date_str} {slot}\n🏠 {house}\n\n🚪 Напомните подъезд:", reply_markup=InlineKeyboardMarkup(keyboard))
         return
     
     if data.startswith("entrance_"):
@@ -268,7 +274,7 @@ async def callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if row:
             keyboard.append(row)
         
-        await query.edit_message_text(f"📅 {date_str} {slot}\n🏠 {house}, подъезд {entrance}\n\n🏢 Выберите квартиру:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text(f"📅 {date_str} {slot}\n🏠 {house}, подъезд {entrance}\n\n🏢 Выберите свою квартиру:", reply_markup=InlineKeyboardMarkup(keyboard))
         return
     
     if data.startswith("flat_"):
@@ -281,7 +287,7 @@ async def callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if query.message.chat.type != "private":
                 await ctx.bot.send_message(
                     chat_id=query.message.chat_id,
-                    text=f"🔥 @{user.username} забронировал BBQ на {date_str} {slot}\n🏠 {house}, подъезд {entrance}, кв. {flat}"
+                    text=f"🔥 @{user.username} забронировал BBQ на {date_str} {slot}\n🏠 {house}"
                 )
         else:
             await query.edit_message_text("❌ Слот уже занят!")
