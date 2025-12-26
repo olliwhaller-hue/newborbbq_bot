@@ -121,9 +121,17 @@ def calendar_markup(year: int, month: int):
     
     for day in range(1, last_day.day + 1):
         date_str = f"{year}-{month:02d}-{day:02d}"
+        
+        # БЛОКИРУЕМ ПРОШЕДШИЕ ДАТЫ
+        today = datetime.date.today()
+        current_date = datetime.date(year, month, day)
+        if current_date < today:
+            row.append(InlineKeyboardButton(" ", callback_data="ignore"))
+            continue
+        
         bookings = get_bookings(date_str)
         taken = len(bookings)
-        emoji = "◼" if taken == len(SLOTS) else "🔸" if taken > 0 else ""
+        emoji = "◼" if taken == len(SLOTS) else "◻" if taken > 0 else "⬜"
         row.append(InlineKeyboardButton(f"{emoji} {day}", callback_data=f"date_{date_str}"))
         if len(row) == 7:
             keyboard.append(row)
