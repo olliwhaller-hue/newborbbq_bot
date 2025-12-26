@@ -30,11 +30,13 @@ HOUSES = {
         }
     },
     "Миля 3": {
-        "подъезды": ["1", "2", "3"],
+        "подъезды": ["1", "2", "3", "4", "5"],
         "квартиры": {
-            "1": [f"{i}" for i in range(1, 10)],
-            "2": [f"{i}" for i in range(10, 19)],
-            "3": [f"{i}" for i in range(19, 28)],
+            "1": [f"{i}" for i in range(1, 55)],
+            "2": [f"{i}" for i in range(56, 90)],
+            "3": [f"{i}" for i in range(91, 125)],
+            "4": [f"{i}" for i in range(126, 166)],
+            "5": [f"{i}" for i in range(1671, 197)],
         }
     }
 }
@@ -322,6 +324,6 @@ def main():
     
     print("✅ Бот запущен. Нажми Ctrl+C для остановки.")
     app.run_polling(drop_pending_updates=True)
-    
+
 if __name__ == "__main__":
     main()
