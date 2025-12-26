@@ -101,9 +101,9 @@ def calendar_markup(year: int, month: int):
     """Создать inline-клавиатуру-календарь"""
     keyboard = []
     keyboard.append([
-        InlineKeyboardButton("<", callback_data=f"nav_{year}_{month}_prev"),
+        InlineKeyboardButton("⬅️", callback_data=f"nav_{year}_{month}_prev"),
         InlineKeyboardButton(f"{month:02}/{year}", callback_data="ignore"),
-        InlineKeyboardButton(">", callback_data=f"nav_{year}_{month}_next")
+        InlineKeyboardButton("➡️", callback_data=f"nav_{year}_{month}_next")
     ])
     days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
     keyboard.append([InlineKeyboardButton(d, callback_data="ignore") for d in days])
@@ -123,7 +123,7 @@ def calendar_markup(year: int, month: int):
         date_str = f"{year}-{month:02d}-{day:02d}"
         bookings = get_bookings(date_str)
         taken = len(bookings)
-        emoji = "◼" if taken == len(SLOTS) else "◻" if taken > 0 else "⬜"
+        emoji = "◼" if taken == len(SLOTS) else "🔸" if taken > 0 else ""
         row.append(InlineKeyboardButton(f"{emoji} {day}", callback_data=f"date_{date_str}"))
         if len(row) == 7:
             keyboard.append(row)
@@ -223,7 +223,7 @@ async def callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 keyboard.append([InlineKeyboardButton(f"❌ {slot} (занято)", callback_data="ignore")])
             else:
                 keyboard.append([InlineKeyboardButton(f"✅ {slot}", callback_data=f"slot_{date_str}_{slot}")])
-        keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data="back")])
+            keyboard.append([InlineKeyboardButton("↩️ Назад", callback_data="back")])
         await query.edit_message_text(f"📅 {date_str} – выберите слот:", reply_markup=InlineKeyboardMarkup(keyboard))
         return
     
