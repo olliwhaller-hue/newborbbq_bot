@@ -132,13 +132,15 @@ def calendar_markup(year: int, month: int):
         # Показываем индикаторы для всех дат
         bookings = get_bookings(date_str)
         taken = len(bookings)
-        emoji = "◼" if taken == len(SLOTS) else "◻" if taken > 0 else "⬜"
+        emoji = "◼" if taken == len(SLOTS) else "◻" if taken > 0 else ""
         
         # Если дата недоступна (прошлая), делаем кнопку неактивной
         if not is_available:
             row.append(InlineKeyboardButton(" ", callback_data="ignore"))
         else:
-            row.append(InlineKeyboardButton(f"{emoji} {day}", callback_data=f"date_{date_str}"))
+            # ИСПРАВЛЕНО: Убираем ведущий пробел, если эмодзи пустое
+            button_text = f"{emoji} {day}" if emoji else str(day)
+            row.append(InlineKeyboardButton(button_text, callback_data=f"date_{date_str}"))
         
         if len(row) == 7:
             keyboard.append(row)
@@ -268,7 +270,7 @@ async def callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data['booking'] = {'date': date_str, 'slot': slot}
         
         keyboard = [[InlineKeyboardButton(house, callback_data=f"house_{date_str}_{slot}_{house}")] for house in HOUSES.keys()]
-        await query.edit_message_text(f"📅 {date_str} {slot}\n\n🏠 Выберите дом:", reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text(f"📅 {date_str} {slot}\n\n🏠 Из какого Вы дома?", reply_markup=InlineKeyboardMarkup(keyboard))
         return
     
     if data.startswith("house_"):
@@ -360,8 +362,11 @@ def main():
     app.add_handler(CommandHandler("bbq", bbq_cmd))
     app.add_handler(CommandHandler("my_bookings", my_bookings_cmd))
     app.add_handler(CommandHandler("cancel", cancel_cmd))
-    app.add_handler(CallbackQueryHandler(callback))
+    
+    # ИСПРАВЛЕНО: Поменяли порядок - сначала специфичный обработчик с паттерном
     app.add_handler(CallbackQueryHandler(del_callback, pattern="^del_"))
+    app.add_handler(CallbackQueryHandler(callback))
+    
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_msg))
     
     print("✅ Бот запущен. Нажми Ctrl+C для остановки.")
