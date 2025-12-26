@@ -6,7 +6,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 from dotenv import load_dotenv
 from pathlib import Path
 
-# Загружаем .env
+# Загружаем .env из той же папки
 env_path = Path(__file__).parent / '.env'
 load_dotenv(dotenv_path=env_path, override=True)
 
@@ -14,7 +14,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_TG_ID = int(os.getenv("ADMIN_TG_ID", 0))
 
 # Настройки
-DB_NAME = "/tmp/bbq.db"
+DB_NAME = "bbq.db"  # ВАЖНО: /tmp для Render
 SLOTS = ["10-12", "12-14", "14-16", "16-18", "18-20", "20-22"]
 
 # Предустановленные данные о домах
@@ -30,18 +30,19 @@ HOUSES = {
         }
     },
     "Миля 3": {
-        "подъезды": ["1", "2", "3"],
+        "подъезды": ["1", "2", "3", "4", "5"],
         "квартиры": {
-            "1": [f"{i}" for i in range(1, 10)],
-            "2": [f"{i}" for i in range(10, 19)],
-            "3": [f"{i}" for i in range(19, 28)],
+            "1": [f"{i}" for i in range(1, 21)],
+            "2": [f"{i}" for i in range(21, 41)],
+            "3": [f"{i}" for i in range(41, 61)],
+            "4": [f"{i}" for i in range(61, 81)],
+            "5": [f"{i}" for i in range(81, 101)],
         }
     }
 }
 
 # --- База данных ---
 def init_db():
-    """Создать таблицу, если её нет"""
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute("""
@@ -55,7 +56,6 @@ def init_db():
     conn.close()
 
 def get_bookings(date_str: str):
-    """Получить слоты за дату"""
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute("SELECT slot, username FROM bookings WHERE date = ?", (date_str,))
@@ -64,7 +64,6 @@ def get_bookings(date_str: str):
     return result
 
 def book_slot(date_str: str, slot: str, user_id: int, username: str, house: str, entrance: str, flat: str) -> bool:
-    """Забронировать слот"""
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     try:
@@ -80,7 +79,6 @@ def book_slot(date_str: str, slot: str, user_id: int, username: str, house: str,
         conn.close()
 
 def cancel_slot(date_str: str, slot: str, user_id: int):
-    """Отменить свою бронь"""
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute("DELETE FROM bookings WHERE date = ? AND slot = ? AND user_id = ?", (date_str, slot, user_id))
@@ -88,7 +86,6 @@ def cancel_slot(date_str: str, slot: str, user_id: int):
     conn.close()
 
 def get_user_bookings(user_id: int):
-    """Получить все брони пользователя"""
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute("SELECT date, slot, house, entrance, flat FROM bookings WHERE user_id = ? ORDER BY date, slot", (user_id,))
@@ -98,7 +95,6 @@ def get_user_bookings(user_id: int):
 
 # --- Календарь ---
 def calendar_markup(year: int, month: int):
-    """Создать inline-клавиатуру-календарь"""
     keyboard = []
     keyboard.append([
         InlineKeyboardButton("<", callback_data=f"nav_{year}_{month}_prev"),
@@ -123,7 +119,6 @@ def calendar_markup(year: int, month: int):
         date_str = f"{year}-{month:02d}-{day:02d}"
         bookings = get_bookings(date_str)
         taken = len(bookings)
-        # КОМПАКТНЫЕ ЭМОДЗИ
         emoji = "◼" if taken == len(SLOTS) else "◻" if taken > 0 else "⬜"
         row.append(InlineKeyboardButton(f"{emoji} {day}", callback_data=f"date_{date_str}"))
         if len(row) == 7:
@@ -136,7 +131,6 @@ def calendar_markup(year: int, month: int):
 
 # --- Клавиатура ---
 def get_main_keyboard():
-    """Главная ReplyKeyboard"""
     keyboard = [
         ["📅 Календарь", "📋 Мои брони"],
         ["❌ Отменить бронь"]
@@ -145,7 +139,6 @@ def get_main_keyboard():
 
 # --- Обработчики ---
 async def start_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Команда /start с клавиатурой"""
     welcome = (
         "🔥 Бот для бронирования BBQ\n\n"
         "• Нажмите «📅 Календарь» чтобы выбрать дату\n"
@@ -155,12 +148,10 @@ async def start_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(welcome, reply_markup=get_main_keyboard())
 
 async def bbq_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Команда /bbq – показать календарь"""
     now = datetime.datetime.now()
     await update.message.reply_text("📅 Выберите дату:", reply_markup=calendar_markup(now.year, now.month))
 
 async def my_bookings_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Показать мои активные брони"""
     user_id = update.message.from_user.id
     bookings = get_user_bookings(user_id)
     
@@ -172,7 +163,6 @@ async def my_bookings_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 async def cancel_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Показать мои брони для отмены"""
     user_id = update.message.from_user.id
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -188,7 +178,6 @@ async def cancel_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Выберите слот для отмены:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Обработка всех нажатий на inline-кнопки"""
     query = update.callback_query
     await query.answer()
     data = query.data
@@ -196,7 +185,6 @@ async def callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if data == "ignore":
         return
     
-    # Навигация по месяцам
     if data.startswith("nav_"):
         _, year, month, direction = data.split("_")
         year, month = int(year), int(month)
@@ -211,13 +199,11 @@ async def callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_reply_markup(reply_markup=calendar_markup(year, month))
         return
     
-    # Возврат к календарю
     if data == "back":
         now = datetime.datetime.now()
         await query.edit_message_reply_markup(reply_markup=calendar_markup(now.year, now.month))
         return
     
-    # Выбор даты -> показываем слоты
     if data.startswith("date_"):
         date_str = data.split("_", 1)[1]
         bookings = get_bookings(date_str)
@@ -231,7 +217,6 @@ async def callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"📅 {date_str} – выберите слот:", reply_markup=InlineKeyboardMarkup(keyboard))
         return
     
-    # Выбор слота -> показываем ДОМА
     if data.startswith("slot_"):
         _, date_str, slot = data.split("_", 2)
         ctx.user_data['booking'] = {'date': date_str, 'slot': slot}
@@ -240,7 +225,6 @@ async def callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"📅 {date_str} {slot}\n\n🏠 Выберите дом:", reply_markup=InlineKeyboardMarkup(keyboard))
         return
     
-    # Выбор дома -> показываем ПОДЪЕЗДЫ
     if data.startswith("house_"):
         _, date_str, slot, house = data.split("_", 3)
         ctx.user_data['booking'].update({'house': house})
@@ -249,7 +233,6 @@ async def callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"📅 {date_str} {slot}\n🏠 {house}\n\n🚪 Выберите подъезд:", reply_markup=InlineKeyboardMarkup(keyboard))
         return
     
-    # Выбор подъезда -> показываем КВАРТИРЫ
     if data.startswith("entrance_"):
         _, date_str, slot, house, entrance = data.split("_", 4)
         ctx.user_data['booking'].update({'entrance': entrance})
@@ -268,7 +251,6 @@ async def callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"📅 {date_str} {slot}\n🏠 {house}, подъезд {entrance}\n\n🏢 Выберите квартиру:", reply_markup=InlineKeyboardMarkup(keyboard))
         return
     
-    # Выбор квартиры -> ФИНАЛЬНОЕ БРОНИРОВАНИЕ
     if data.startswith("flat_"):
         _, date_str, slot, house, entrance, flat = data.split("_", 5)
         user = query.from_user
@@ -276,7 +258,6 @@ async def callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if book_slot(date_str, slot, user.id, user.username or "Без_ника", house, entrance, flat):
             await query.edit_message_text(f"✅ Забронировано:\n📅 {date_str} {slot}\n🏠 {house}, подъезд {entrance}, кв. {flat}")
             
-            # Уведомление в группу
             if query.message.chat.type != "private":
                 await ctx.bot.send_message(
                     chat_id=query.message.chat_id,
@@ -288,7 +269,6 @@ async def callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data.clear()
         return
 
-# Обработка отмены
 async def del_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -301,4 +281,18 @@ async def del_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # --- Старт ---
 def main():
     init_db()
-   
+    app = Application.builder().token(BOT_TOKEN).build()
+    
+    app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("bbq", bbq_cmd))
+    app.add_handler(CommandHandler("my_bookings", my_bookings_cmd))
+    app.add_handler(CommandHandler("cancel", cancel_cmd))
+    app.add_handler(CallbackQueryHandler(callback))
+    app.add_handler(CallbackQueryHandler(del_callback, pattern="^del_"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_msg))
+    
+    print("✅ Бот запущен. Нажми Ctrl+C для остановки.")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
