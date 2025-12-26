@@ -202,11 +202,7 @@ async def my_bookings_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cancel_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Показать мои брони для отмены"""
     user_id = update.message.from_user.id
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("SELECT date, slot, house, entrance, flat FROM bookings WHERE user_id = %s ORDER BY date, slot", (user_id,))
-    bookings = c.fetchall()
-    conn.close()
+    bookings = get_user_bookings(user_id)  # Используем существующую функцию
     
     if not bookings:
         await update.message.reply_text("❌ У вас нет активных бронирований.")
