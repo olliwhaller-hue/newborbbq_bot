@@ -144,7 +144,7 @@ def calendar_markup(year: int, month: int):
         # Показываем индикаторы для всех дат
         bookings = get_bookings(date_str)
         taken = len(bookings)
-        emoji = "◼" if taken == len(SLOTS) else "❌" if taken > 0 else ""
+        emoji = "❌" if taken == len(SLOTS) else "✅" if taken > 0 else ""
         
         # Если дата недоступна (прошлая), делаем кнопку неактивной
         if not is_available:
