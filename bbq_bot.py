@@ -1,6 +1,7 @@
 import os
-import sqlite3
 import datetime
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
@@ -13,8 +14,10 @@ load_dotenv(dotenv_path=env_path, override=True)
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_TG_ID = int(os.getenv("ADMIN_TG_ID", 0))
 
+# PostgreSQL URL из Render
+DATABASE_URL = os.getenv("DATABASE_URL")
+
 # Настройки
-DB_NAME = "/tmp/bbq.db"
 SLOTS = ["10-12", "12-14", "14-16", "16-18", "18-20", "20-22"]
 
 # Предустановленные данные о домах
@@ -42,14 +45,22 @@ HOUSES = {
 }
 
 # --- База данных ---
+def get_db_connection():
+    """Получить соединение с PostgreSQL"""
+    return psycopg2.connect(
+        DATABASE_URL,
+        sslmode='require',
+        cursor_factory=RealDictCursor
+    )
+
 def init_db():
     """Создать таблицу, если её нет"""
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db_connection()
     c = conn.cursor()
     c.execute("""
         CREATE TABLE IF NOT EXISTS bookings (
-            date TEXT, slot TEXT, user_id INTEGER, username TEXT,
-            house TEXT, entrance TEXT, flat TEXT, booked_at TEXT,
+            date DATE, slot TEXT, user_id INTEGER, username TEXT,
+            house TEXT, entrance TEXT, flat TEXT, booked_at TIMESTAMP,
             PRIMARY KEY (date, slot)
         )
     """)
@@ -58,43 +69,44 @@ def init_db():
 
 def get_bookings(date_str: str):
     """Получить слоты за дату"""
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT slot, username FROM bookings WHERE date = ?", (date_str,))
-    result = dict(c.fetchall())
+    c.execute("SELECT slot, username FROM bookings WHERE date = %s", (date_str,))
+    result = {row['slot']: row['username'] for row in c.fetchall()}
     conn.close()
     return result
 
 def book_slot(date_str: str, slot: str, user_id: int, username: str, house: str, entrance: str, flat: str) -> bool:
     """Забронировать слот"""
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db_connection()
     c = conn.cursor()
     try:
         c.execute("""
             INSERT INTO bookings (date, slot, user_id, username, house, entrance, flat, booked_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (date_str, slot, user_id, username, house, entrance, flat, datetime.datetime.now().isoformat()))
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """, (date_str, slot, user_id, username, house, entrance, flat, datetime.datetime.now()))
         conn.commit()
         return True
-    except sqlite3.IntegrityError:
+    except psycopg2.IntegrityError:
+        conn.rollback()
         return False
     finally:
         conn.close()
 
 def cancel_slot(date_str: str, slot: str, user_id: int):
     """Отменить свою бронь"""
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db_connection()
     c = conn.cursor()
-    c.execute("DELETE FROM bookings WHERE date = ? AND slot = ? AND user_id = ?", (date_str, slot, user_id))
+    c.execute("DELETE FROM bookings WHERE date = %s AND slot = %s AND user_id = %s", (date_str, slot, user_id))
     conn.commit()
     conn.close()
 
 def get_user_bookings(user_id: int):
     """Получить все брони пользователя"""
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT date, slot, house, entrance, flat FROM bookings WHERE user_id = ? ORDER BY date, slot", (user_id,))
-    result = c.fetchall()
+    c.execute("SELECT date, slot, house, entrance, flat FROM bookings WHERE user_id = %s ORDER BY date, slot", (user_id,))
+    result = [(row['date'], row['slot'], row['house'], row['entrance'], row['flat']) for row in c.fetchall()]
     conn.close()
     return result
 
@@ -190,9 +202,9 @@ async def my_bookings_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cancel_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Показать мои брони для отмены"""
     user_id = update.message.from_user.id
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db_connection()
     c = conn.cursor()
-    c.execute("SELECT date, slot, house, entrance, flat FROM bookings WHERE user_id = ? ORDER BY date, slot", (user_id,))
+    c.execute("SELECT date, slot, house, entrance, flat FROM bookings WHERE user_id = %s ORDER BY date, slot", (user_id,))
     bookings = c.fetchall()
     conn.close()
     
